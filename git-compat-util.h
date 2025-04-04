@@ -378,7 +378,7 @@ int compat_mkdir_wo_trailing_slash(const char*, mode_t);
 #ifdef time
 #undef time
 #endif
-static inline time_t git_time(time_t *tloc)
+static inline time_t git_time_function(time_t *tloc)
 {
 	struct timeval tv;
 
@@ -392,7 +392,7 @@ static inline time_t git_time(time_t *tloc)
 		*tloc = tv.tv_sec;
 	return tv.tv_sec;
 }
-#define time git_time
+#define git_time_function git_time
 
 #ifdef NO_STRUCT_ITIMERVAL
 struct itimerval {

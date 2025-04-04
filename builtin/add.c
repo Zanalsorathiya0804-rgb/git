@@ -3,7 +3,9 @@
  *
  * Copyright (C) 2006 Linus Torvalds
  */
-
+#include <git2.h>
+#include <git2/sys/transport.h>
+ 
 #include "builtin.h"
 #include "advice.h"
 #include "config.h"
@@ -23,6 +25,8 @@
 #include "strvec.h"
 #include "submodule.h"
 #include "add-interactive.h"
+#define LFS_THRESHOLD_SIZE (50 * 1024 * 1024)  // 50MB
+void run_git_lfs_add(const char *path);
 
 static const char * const builtin_add_usage[] = {
 	N_("git add [<options>] [--] <pathspec>..."),
@@ -346,20 +350,31 @@ static int add_files(struct repository *repo, struct dir_struct *dir, int flags)
 	}
 
 	for (i = 0; i < dir->nr; i++) {
-		if (!include_sparse &&
-		    !path_in_sparse_checkout(dir->entries[i]->name, repo->index)) {
-			string_list_append(&matched_sparse_paths,
-					   dir->entries[i]->name);
-			continue;
-		}
-		if (add_file_to_index(repo->index, dir->entries[i]->name, flags)) {
-			if (!ignore_add_errors)
-				die(_("adding files failed"));
-			exit_status = 1;
-		} else {
-			check_embedded_repo(dir->entries[i]->name);
-		}
-	}
+        const char *path = dir->entries[i]->name;
+
+        // Check file size and add to LFS if it's above the threshold
+        struct stat st;
+        if (stat(path, &st) == 0 && st.st_size > LFS_THRESHOLD_SIZE) {
+            // Add to LFS instead of regular tracking
+            run_git_lfs_add(path);  // Your custom function to add file to LFS
+        } else {
+            // Proceed with regular file addition
+            if (add_file_to_index(repo->index, path, flags)) {
+                if (!ignore_add_errors)
+                    die(_("adding files failed"));
+                exit_status = 1;
+            } else {
+                check_embedded_repo(path);
+            }
+        }
+
+        // Handle sparse paths
+        if (!include_sparse &&
+            !path_in_sparse_checkout(path, repo->index)) {
+            string_list_append(&matched_sparse_paths, path);
+            continue;
+        }
+    }
 
 	if (matched_sparse_paths.nr) {
 		advise_on_updating_sparse_paths(&matched_sparse_paths);
@@ -590,4 +605,32 @@ finish:
 	dir_clear(&dir);
 	clear_pathspec(&pathspec);
 	return exit_status;
+}
+
+void run_git_lfs_add(const char *path) {
+    // Initialize the repository and index objects
+    git_repository *repo = NULL;
+    git_index *index;
+    git_oid oid;
+
+    // Open the repository (assuming the current working directory is a Git repo)
+    if (git_repository_open(&repo, ".") < 0) {
+        // Handle errors, possibly logging or returning
+        return;
+    }
+
+    // Get the repository's index
+    git_repository_index(&index, repo);
+    
+    // Add the file to the index (this is part of adding to Git LFS)
+    git_index_add_bypath(index, path);
+    git_index_write(index);  // Update the index
+
+    // Optionally, you might want to interact with LFS storage, 
+    // this could be more complex depending on LFS integration logic
+    // e.g., git_lfs_add(path); if you have the LFS logic available
+
+    // Free index and repo
+    git_index_free(index);
+    git_repository_free(repo);
 }
