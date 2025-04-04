@@ -6,7 +6,7 @@
  */
 
 #define USE_THE_REPOSITORY_VARIABLE
-
+#include "log.h"
 #include "builtin.h"
 #include "abspath.h"
 #include "config.h"
@@ -263,26 +263,39 @@ static void cmd_log_init_finish(int argc, const char **argv, const char *prefix,
 	};
 	static struct revision_sources revision_sources;
 
-	const struct option builtin_log_options[] = {
-		OPT__QUIET(&quiet, N_("suppress diff output")),
-		OPT_BOOL(0, "source", &source, N_("show source")),
-		OPT_BOOL(0, "use-mailmap", &mailmap, N_("use mail map file")),
-		OPT_ALIAS(0, "mailmap", "use-mailmap"),
-		OPT_CALLBACK_F(0, "clear-decorations", NULL, NULL,
-			       N_("clear all previously-defined decoration filters"),
-			       PARSE_OPT_NOARG | PARSE_OPT_NONEG,
-			       clear_decorations_callback),
-		OPT_STRING_LIST(0, "decorate-refs", &decorate_refs_include,
-				N_("pattern"), N_("only decorate refs that match <pattern>")),
-		OPT_STRING_LIST(0, "decorate-refs-exclude", &decorate_refs_exclude,
-				N_("pattern"), N_("do not decorate refs that match <pattern>")),
-		OPT_CALLBACK_F(0, "decorate", cfg, NULL, N_("decorate options"),
-			       PARSE_OPT_OPTARG, decorate_callback),
-		OPT_CALLBACK('L', NULL, &line_cb, "range:file",
-			     N_("trace the evolution of line range <start>,<end> or function :<funcname> in <file>"),
-			     log_line_range_callback),
+	static char *custom_date_format = NULL;  // Store user-specified format
+	static struct option log_options[] = {
+		// Other existing options...
+		OPT_STRING(0, "custom-date-format", &custom_date_format, "FORMAT",
+				   "Specify a custom date format for log output"),
 		OPT_END()
 	};
+const struct option builtin_log_options[] = {
+	OPT__QUIET(&quiet, N_("suppress diff output")),
+	OPT_BOOL(0, "source", &source, N_("show source")),
+	OPT_BOOL(0, "use-mailmap", &mailmap, N_("use mail map file")),
+	OPT_ALIAS(0, "mailmap", "use-mailmap"),
+	OPT_CALLBACK_F(0, "clear-decorations", NULL, NULL,
+		       N_("clear all previously-defined decoration filters"),
+		       PARSE_OPT_NOARG | PARSE_OPT_NONEG,
+		       clear_decorations_callback),
+	OPT_STRING_LIST(0, "decorate-refs", &decorate_refs_include,
+			N_("pattern"), N_("only decorate refs that match <pattern>")),
+	OPT_STRING_LIST(0, "decorate-refs-exclude", &decorate_refs_exclude,
+			N_("pattern"), N_("do not decorate refs that match <pattern>")),
+	OPT_CALLBACK_F(0, "decorate", cfg, NULL, N_("decorate options"),
+		       PARSE_OPT_OPTARG, decorate_callback),
+	OPT_CALLBACK('L', NULL, &line_cb, "range:file",
+		     N_("trace the evolution of line range <start>,<end> or function :<funcname> in <file>"),
+		     log_line_range_callback),
+
+	// 🚀 New option for custom date format
+	OPT_STRING(0, "custom-date-format", &custom_date_format, "format",
+               N_("Specify a custom date format for git log")),
+
+	OPT_END()
+};
+
 
 	line_cb.rev = rev;
 	line_cb.prefix = prefix;
@@ -922,34 +935,45 @@ static void log_setup_revisions_tweak(struct rev_info *rev)
 }
 
 int cmd_log(int argc,
-	    const char **argv,
-	    const char *prefix,
-	    struct repository *repo UNUSED)
+	const char **argv,
+	const char *prefix,
+	struct repository *repo UNUSED)
 {
-	struct log_config cfg;
-	struct rev_info rev;
-	struct setup_revision_opt opt;
-	int ret;
+struct log_config cfg;
+struct rev_info rev;
+struct setup_revision_opt opt;
+int ret;
 
-	log_config_init(&cfg);
-	init_diff_ui_defaults();
-	git_config(git_log_config, &cfg);
+log_config_init(&cfg);
+init_diff_ui_defaults();
+git_config(git_log_config, &cfg);
 
-	repo_init_revisions(the_repository, &rev, prefix);
-	git_config(grep_config, &rev.grep_filter);
+repo_init_revisions(the_repository, &rev, prefix);
+git_config(grep_config, &rev.grep_filter);
 
-	rev.always_show_header = 1;
-	memset(&opt, 0, sizeof(opt));
-	opt.def = "HEAD";
-	opt.revarg_opt = REVARG_COMMITTISH;
-	opt.tweak = log_setup_revisions_tweak;
-	cmd_log_init(argc, argv, prefix, &rev, &opt, &cfg);
+rev.always_show_header = 1;
+memset(&opt, 0, sizeof(opt));
+opt.def = "HEAD";
+opt.revarg_opt = REVARG_COMMITTISH;
+opt.tweak = log_setup_revisions_tweak;
 
-	ret = cmd_log_walk(&rev);
+/* Add new CLI option for custom date format */
+struct option log_options[] = {
+	OPT_STRING(0, "custom-date-format", &custom_date_format, "format",
+			   N_("Specify a custom date format for git log")),
+	OPT_END()
+};
 
-	release_revisions(&rev);
-	log_config_release(&cfg);
-	return ret;
+/* Parse new option */
+argc = parse_options(argc, argv, prefix, log_options, builtin_log_usage, 0);
+
+cmd_log_init(argc, argv, prefix, &rev, &opt, &cfg);
+
+ret = cmd_log_walk(&rev);
+
+release_revisions(&rev);
+log_config_release(&cfg);
+return ret;
 }
 
 /* format-patch */
@@ -2255,9 +2279,15 @@ int cmd_format_patch(int argc,
 	rev.preserve_subject = cfg.keep_subject;
 
 	argc = setup_revisions(argc, argv, &rev, &s_r_opt);
-	if (argc > 1)
-		die(_("unrecognized argument: %s"), argv[1]);
 
+    // Apply custom date format if provided
+    if (custom_date_format) {
+         parse_date_format(custom_date_format, &rev.date_mode);
+    }
+
+    if (argc > 1){
+    	die(_("unrecognized argument: %s"), argv[1]);
+	}
 	if (rev.diffopt.output_format & DIFF_FORMAT_NAME)
 		die(_("--name-only does not make sense"));
 	if (rev.diffopt.output_format & DIFF_FORMAT_NAME_STATUS)
@@ -2266,14 +2296,14 @@ int cmd_format_patch(int argc,
 		die(_("--check does not make sense"));
 	if (rev.remerge_diff)
 		die(_("--remerge-diff does not make sense"));
-
+	
 	if (!use_patch_format &&
 		(!rev.diffopt.output_format ||
 		 rev.diffopt.output_format == DIFF_FORMAT_PATCH))
 		rev.diffopt.output_format = DIFF_FORMAT_DIFFSTAT | DIFF_FORMAT_SUMMARY;
 	if (!rev.diffopt.stat_width)
 		rev.diffopt.stat_width = MAIL_DEFAULT_WRAP;
-
+	
 	/* Always generate a patch */
 	rev.diffopt.output_format |= DIFF_FORMAT_PATCH;
 	rev.always_show_header = 1;

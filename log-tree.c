@@ -1,10 +1,11 @@
 #define USE_THE_REPOSITORY_VARIABLE
 #define DISABLE_SIGN_COMPARE_WARNINGS
-
+#include "log.h"
 #include "git-compat-util.h"
 #include "commit-reach.h"
 #include "config.h"
 #include "diff.h"
+#include "pretty.h"  // Ensure this is included for pretty_print_context
 #include "diffcore.h"
 #include "environment.h"
 #include "hex.h"
@@ -33,7 +34,7 @@
 #include "wildmatch.h"
 #include "write-or-die.h"
 #include "pager.h"
-
+#include "stdio.h"
 static struct decoration name_decoration = { "object names" };
 static int decoration_loaded;
 static int decoration_flags;
@@ -1167,38 +1168,62 @@ static int log_tree_diff(struct rev_info *opt, struct commit *commit, struct log
 	return showed_log;
 }
 
+char *custom_date_format = "%Y-%m-%d";
+// Ensure this is declared globally
+void test_custom_date_format() {
+    if (custom_date_format) {
+        printf("Custom Date Format: %s\n", custom_date_format);
+    } else {
+        printf("Custom Date Format is NULL\n");
+    }
+}
 int log_tree_commit(struct rev_info *opt, struct commit *commit)
 {
-	struct log_info log;
-	int shown;
-	/* maybe called by e.g. cmd_log_walk(), maybe stand-alone */
-	int no_free = opt->diffopt.no_free;
+    struct log_info log;
+    int shown;
+    /* maybe called by e.g. cmd_log_walk(), maybe stand-alone */
+    int no_free = opt->diffopt.no_free;
 
-	log.commit = commit;
-	log.parent = NULL;
-	opt->loginfo = &log;
-	opt->diffopt.no_free = 1;
+    struct pretty_print_context pp = {0};
 
-	/* NEEDSWORK: no restoring of no_free?  Why? */
-	if (opt->line_level_traverse)
-		return line_log_print(opt, commit);
+    /* Apply custom date format if available */
+    if (custom_date_format) {
+        parse_date_format(custom_date_format, &pp.date_mode);
+    } else {
+        pp.date_mode = opt->date_mode;
+    }
 
-	if (opt->track_linear && !opt->linear && !opt->reverse_output_stage)
-		fprintf(opt->diffopt.file, "\n%s\n", opt->break_bar);
-	shown = log_tree_diff(opt, commit, &log);
-	if (!shown && opt->loginfo && opt->always_show_header) {
-		log.parent = NULL;
-		show_log(opt);
-		shown = 1;
-	}
-	if (opt->track_linear && !opt->linear && opt->reverse_output_stage)
-		fprintf(opt->diffopt.file, "\n%s\n", opt->break_bar);
-	if (shown)
-		show_diff_of_diff(opt);
-	opt->loginfo = NULL;
-	maybe_flush_or_die(opt->diffopt.file, "stdout");
-	opt->diffopt.no_free = no_free;
+    log.commit = commit;
+    log.parent = NULL;
+    opt->loginfo = &log;
+    opt->diffopt.no_free = 1;
 
-	diff_free(&opt->diffopt);
-	return shown;
+    /* NEEDSWORK: no restoring of no_free?  Why? */
+    if (opt->line_level_traverse)
+        return line_log_print(opt, commit);
+
+    if (opt->track_linear && !opt->linear && !opt->reverse_output_stage)
+        fprintf(opt->diffopt.file, "\n%s\n", opt->break_bar);
+
+    /* Pass the custom date formatting context */
+    shown = log_tree_diff(opt, commit, &log);
+
+    if (!shown && opt->loginfo && opt->always_show_header) {
+        log.parent = NULL;
+        show_log(opt);
+        shown = 1;
+    }
+
+    if (opt->track_linear && !opt->linear && opt->reverse_output_stage)
+        fprintf(opt->diffopt.file, "\n%s\n", opt->break_bar);
+
+    if (shown)
+        show_diff_of_diff(opt);
+
+    opt->loginfo = NULL;
+    maybe_flush_or_die(opt->diffopt.file, "stdout");
+    opt->diffopt.no_free = no_free;
+
+    diff_free(&opt->diffopt);
+    return shown;  // Ensure function returns an int
 }
