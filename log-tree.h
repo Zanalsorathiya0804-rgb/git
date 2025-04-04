@@ -1,6 +1,6 @@
 #ifndef LOG_TREE_H
 #define LOG_TREE_H
-
+#include "strbuf.h"
 struct rev_info;
 
 struct log_info {

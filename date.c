@@ -287,86 +287,78 @@ static void show_date_normal(struct strbuf *buf, timestamp_t time, struct tm *tm
 
 const char *show_date(timestamp_t time, int tz, struct date_mode mode)
 {
-	struct tm *tm;
-	struct tm tmbuf = { 0 };
-	struct tm human_tm = { 0 };
-	int human_tz = -1;
-	static struct strbuf timebuf = STRBUF_INIT;
+    struct tm *tm;
+    struct tm tmbuf = { 0 };
+    struct tm human_tm = { 0 };
+    int human_tz = -1;
+    static struct strbuf timebuf = STRBUF_INIT;
 
-	if (mode.type == DATE_UNIX) {
-		strbuf_reset(&timebuf);
-		strbuf_addf(&timebuf, "%"PRItime, time);
-		return timebuf.buf;
-	}
+    strbuf_reset(&timebuf);
 
-	if (mode.type == DATE_HUMAN) {
-		struct timeval now;
+    if (mode.type == DATE_UNIX) {
+        strbuf_addf(&timebuf, "%"PRItime, time);
+        return timebuf.buf;
+    }
 
-		get_time(&now);
+    if (mode.type == DATE_HUMAN) {
+        struct timeval now;
+        get_time(&now);
+        human_tz = local_time_tzoffset(now.tv_sec, &human_tm);
+    }
 
-		/* Fill in the data for "current time" in human_tz and human_tm */
-		human_tz = local_time_tzoffset(now.tv_sec, &human_tm);
-	}
+    if (mode.local)
+        tz = local_tzoffset(time);
 
-	if (mode.local)
-		tz = local_tzoffset(time);
+    if (mode.type == DATE_RAW) {
+        strbuf_addf(&timebuf, "%"PRItime" %+05d", time, tz);
+        return timebuf.buf;
+    }
 
-	if (mode.type == DATE_RAW) {
-		strbuf_reset(&timebuf);
-		strbuf_addf(&timebuf, "%"PRItime" %+05d", time, tz);
-		return timebuf.buf;
-	}
+    if (mode.type == DATE_RELATIVE) {
+        show_date_relative(time, &timebuf);
+        return timebuf.buf;
+    }
 
-	if (mode.type == DATE_RELATIVE) {
-		strbuf_reset(&timebuf);
-		show_date_relative(time, &timebuf);
-		return timebuf.buf;
-	}
+    if (mode.local)
+        tm = time_to_tm_local(time, &tmbuf);
+    else
+        tm = time_to_tm(time, tz, &tmbuf);
+    if (!tm) {
+        tm = time_to_tm(0, 0, &tmbuf);
+        tz = 0;
+    }
 
-	if (mode.local)
-		tm = time_to_tm_local(time, &tmbuf);
-	else
-		tm = time_to_tm(time, tz, &tmbuf);
-	if (!tm) {
-		tm = time_to_tm(0, 0, &tmbuf);
-		tz = 0;
-	}
+    if (mode.type == DATE_SHORT)
+        strbuf_addf(&timebuf, "%04d-%02d-%02d", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+    else if (mode.type == DATE_ISO8601)
+        strbuf_addf(&timebuf, "%04d-%02d-%02d %02d:%02d:%02d %+05d",
+                    tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                    tm->tm_hour, tm->tm_min, tm->tm_sec, tz);
+    else if (mode.type == DATE_ISO8601_STRICT) {
+        strbuf_addf(&timebuf, "%04d-%02d-%02dT%02d:%02d:%02d",
+                    tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                    tm->tm_hour, tm->tm_min, tm->tm_sec);
+        if (tz == 0) {
+            strbuf_addch(&timebuf, 'Z');
+        } else {
+            strbuf_addch(&timebuf, tz >= 0 ? '+' : '-');
+            tz = abs(tz);
+            strbuf_addf(&timebuf, "%02d:%02d", tz / 100, tz % 100);
+        }
+    } else if (mode.type == DATE_RFC2822)
+        strbuf_addf(&timebuf, "%.3s, %d %.3s %d %02d:%02d:%02d %+05d",
+                    weekday_names[tm->tm_wday], tm->tm_mday,
+                    month_names[tm->tm_mon], tm->tm_year + 1900,
+                    tm->tm_hour, tm->tm_min, tm->tm_sec, tz);
+    else if (mode.type == DATE_STRFTIME) {
+        if (mode.strftime_fmt)
+            strbuf_addftime(&timebuf, mode.strftime_fmt, tm, tz, !mode.local);
+        else
+            show_date_normal(&timebuf, time, tm, tz, &human_tm, human_tz, mode.local);
+    } else
+        show_date_normal(&timebuf, time, tm, tz, &human_tm, human_tz, mode.local);
 
-	strbuf_reset(&timebuf);
-	if (mode.type == DATE_SHORT)
-		strbuf_addf(&timebuf, "%04d-%02d-%02d", tm->tm_year + 1900,
-				tm->tm_mon + 1, tm->tm_mday);
-	else if (mode.type == DATE_ISO8601)
-		strbuf_addf(&timebuf, "%04d-%02d-%02d %02d:%02d:%02d %+05d",
-				tm->tm_year + 1900,
-				tm->tm_mon + 1,
-				tm->tm_mday,
-				tm->tm_hour, tm->tm_min, tm->tm_sec,
-				tz);
-	else if (mode.type == DATE_ISO8601_STRICT) {
-		strbuf_addf(&timebuf, "%04d-%02d-%02dT%02d:%02d:%02d",
-				tm->tm_year + 1900,
-				tm->tm_mon + 1,
-				tm->tm_mday,
-				tm->tm_hour, tm->tm_min, tm->tm_sec);
-		if (tz == 0) {
-			strbuf_addch(&timebuf, 'Z');
-		} else {
-			strbuf_addch(&timebuf, tz >= 0 ? '+' : '-');
-			tz = abs(tz);
-			strbuf_addf(&timebuf, "%02d:%02d", tz / 100, tz % 100);
-		}
-	} else if (mode.type == DATE_RFC2822)
-		strbuf_addf(&timebuf, "%.3s, %d %.3s %d %02d:%02d:%02d %+05d",
-			weekday_names[tm->tm_wday], tm->tm_mday,
-			month_names[tm->tm_mon], tm->tm_year + 1900,
-			tm->tm_hour, tm->tm_min, tm->tm_sec, tz);
-	else if (mode.type == DATE_STRFTIME)
-		strbuf_addftime(&timebuf, mode.strftime_fmt, tm, tz,
-				!mode.local);
-	else
-		show_date_normal(&timebuf, time, tm, tz, &human_tm, human_tz, mode.local);
-	return timebuf.buf;
+    return timebuf.buf;
 }
 
 /*

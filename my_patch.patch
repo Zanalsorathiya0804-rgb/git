@@ -1,0 +1,51 @@
+From 2e959ff101a0f66f14a7abb79ebf742cb107e56c Mon Sep 17 00:00:00 2001
+From: zanal <zanalsorathiya@gmail.com>
+Date: Wed, 2 Apr 2025 08:36:18 +0000
+Subject: [PATCH] doc : add interactive rebase examples to git-rebase
+ documentation
+
+---
+ Documentation/git-rebase.adoc | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/Documentation/git-rebase.adoc b/Documentation/git-rebase.adoc
+index 956d3048f5..16d08ff949 100644
+--- a/Documentation/git-rebase.adoc
++++ b/Documentation/git-rebase.adoc
+@@ -1305,3 +1305,33 @@ include::config/sequencer.adoc[]
+ GIT
+ ---
+ Part of the linkgit:git[1] suite
++== EXAMPLES
++
++=== Interactively Rebasing the Last 4 Commits
++
++To interactively rebase the last 4 commits, use:
++
++-------------------------------------------------
++$ git rebase -i HEAD~4
++-------------------------------------------------
++
++This will open an editor with a list of the last 4 commits, allowing you to:
++- **pick** (keep commit as is)
++- **edit** (modify commit message or content)
++- **squash** (combine commits)
++- **reorder** (change commit sequence)
++
++Example: To squash the last two commits into one:
++
++1. Run:
++   $ git rebase -i HEAD~2
++
++2. Change the second commit’s action from `pick` to `squash`:
++
++-------------------------------------------------
++pick abc123 Commit message 1
++squash def456 Commit message 2
++-------------------------------------------------
++
++3. Save and exit.
++4. Edit the new commit message if needed, then save.
+-- 
+2.49.0.110.g30eadc9d59
+

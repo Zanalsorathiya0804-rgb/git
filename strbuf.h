@@ -1,6 +1,8 @@
 #ifndef STRBUF_H
 #define STRBUF_H
-
+#include <stddef.h>
+#include <stdarg.h>
+#include <string.h>
 /*
  * NOTE FOR STRBUF DEVELOPERS
  *
